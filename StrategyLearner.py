@@ -59,6 +59,10 @@ class StrategyLearner(object):
         self.YSELL = -0.02
         self.leaf_size = 5
         self.num_bags = 50
+        # Ensemble predictions are averaged votes in [-1, 1]; trade when they
+        # exceed this threshold. Tuned on in-sample data only.
+        self.confidence_threshold = 0.4
+        self.min_holding_days = 15
 
 
     def add_evidence(
@@ -149,19 +153,17 @@ class StrategyLearner(object):
         predictions = self.learner.query(X.values)
         trades = pd.DataFrame(0.0, index=X.index, columns=['Position'])
         current_position = 0
-        confidence_threshold = 0.8
         impact_penalty = 0.6 * self.impact
 
-        buy_confidence = confidence_threshold + impact_penalty
-        sell_confidence = -confidence_threshold - impact_penalty
+        buy_confidence = self.confidence_threshold + impact_penalty
+        sell_confidence = -self.confidence_threshold - impact_penalty
 
         last_trade_day = None
-        min_holding_days = 15
 
         for i, (date, pred) in enumerate(zip(X.index, predictions)):
             if last_trade_day is not None:
                 days_since_trade = i - last_trade_day
-                if days_since_trade < min_holding_days:
+                if days_since_trade < self.min_holding_days:
                     continue
 
             if pred > buy_confidence and current_position <= 0:
