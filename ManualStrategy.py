@@ -1,11 +1,8 @@
 import datetime
-import os
 
-import matplotlib.pyplot as plt
 import pandas as pd
 
 from indicators import build_features
-from marketsimcode import compute_portvals_from_trades
 
 class ManualStrategy():
     """
@@ -20,9 +17,6 @@ class ManualStrategy():
         impact (float) – Market impact of each transaction, defaults to 0.0.
         commission (float) – Commission charged per trade, defaults to 0.0.
     """
-    # Class-level flag to control chart generation
-    generate_charts = True
-
     def __init__(self,verbose=False, impact=0.0, commission=0.0):
         self.verbose = verbose
         self.impact = impact
@@ -51,9 +45,6 @@ class ManualStrategy():
             short; net holdings are always -1000, 0, or 1000.
         """
         trading_signals = build_features(symbol, sd, ed)
-        first_trading_day = trading_signals.index[0]
-        last_trading_day = trading_signals.index[-1]
-
         manual_trades = pd.DataFrame(index=trading_signals.index)
         manual_trades['Position'] = 0.0
         current_position = 0
@@ -102,77 +93,4 @@ class ManualStrategy():
         if self.verbose:
             print(manual_trades[manual_trades['Position'] != 0].head(5))
 
-        manual_strategy_daily_values = compute_portvals_from_trades(
-            manual_trades, symbol, start_val=sv, commission=self.commission, impact=self.impact)
-        benchmark_trades = pd.DataFrame(0.0, index=manual_trades.index, columns=['Position'])
-        benchmark_trades.iloc[0, 0] = 1000
-        daily_benchmark_performance = compute_portvals_from_trades(
-            benchmark_trades, symbol, start_val=sv, commission=self.commission, impact=self.impact)
-
-        if ManualStrategy.generate_charts:
-            self.handle_chart_creation(manual_strategy_daily_values, daily_benchmark_performance, sd, ed, manual_trades)
-
-        self.calc_port_stats(daily_benchmark_performance, "Benchmark")
-        self.calc_port_stats(manual_strategy_daily_values, "Manual Strategy")
-
         return manual_trades
-
-    def handle_chart_creation(self, manual_strategy_values, benchmark_performance, sd, ed, manual_trades):
-        if sd.year < 2010:
-            chart_title = "Performance, Manual vs Benchmark, In-sample"
-        else:
-            chart_title = "Performance, Manual vs Benchmark, out of sample"
-
-        self.plot_portfolio_performance(
-            benchmark_performance,
-            manual_strategy_values,
-            chart_title,
-            manual_trades
-        )
-
-    def plot_portfolio_performance(self, benchmark_return, manual_return, chart_title, manual_trades):
-
-        combined_index = benchmark_return.index.union(manual_return.index)
-        benchmark_return = benchmark_return.reindex(combined_index, method='ffill')
-        manual_return = manual_return.reindex(combined_index, method='ffill')
-
-        normalized_benchmark = benchmark_return['total_value'] / benchmark_return['total_value'].iloc[0]
-        normalized_manual = manual_return['total_value'] / manual_return['total_value'].iloc[0]
-
-        plt.figure(figsize=(16, 8))
-        plt.plot(normalized_benchmark.index, normalized_benchmark,color="purple",label='Benchmark Strategy')
-        plt.plot(normalized_manual.index, normalized_manual, color="red",  label='Manual Strategy')
-
-        manual_trades = manual_trades.copy()
-        manual_trades['net_position'] = manual_trades['Position'].cumsum()
-        manual_trades['previous_position'] = manual_trades['net_position'].shift(1).fillna(0)
-
-        for date, row in manual_trades.iterrows():
-            new_pos = row['net_position']
-            old_pos = row['previous_position']
-
-            if (new_pos == 1000) and (old_pos != 1000):
-                plt.axvline(x=date, color="blue", linestyle="--", linewidth=1)
-
-            elif (new_pos == -1000) and (old_pos != -1000):
-                plt.axvline(x=date, color="black", linestyle="--", linewidth=1)
-
-
-        plt.xlabel("Date")
-        plt.ylabel("Normalized Portfolio Value")
-        plt.title(chart_title)
-        plt.legend()
-        plt.grid(True)
-        os.makedirs("images", exist_ok=True)
-        plt.savefig(os.path.join("images", f"{chart_title}.png"))
-        plt.close()
-
-
-    def calc_port_stats(self, portfolio, portfolio_name):
-        daily_returns = portfolio["total_value"].pct_change().dropna()
-        cum_returns = portfolio["total_value"].iloc[-1] / portfolio["total_value"].iloc[0] - 1.0
-        daily_std  = daily_returns.std()
-        daily_mean = daily_returns.mean()
-
-        if self.verbose:
-            print(f"Name: {portfolio_name}  Cumulative Return: {cum_returns:.6f}, Daily Std: {daily_std:.6f}, Daily Mean: {daily_mean:.6f}")
