@@ -1,11 +1,11 @@
-from datetime import datetime
-from indicators import calc_bollinger, calc_macd, calc_rsi, calc_momentum, calc_ema
-from util import get_data
-from marketsimcode import compute_portvals
-import pandas as pd
 import datetime
+import os
+
 import matplotlib.pyplot as plt
-import numpy as np
+import pandas as pd
+
+from indicators import build_features
+from marketsimcode import compute_portvals_from_trades
 
 class ManualStrategy():
     """
@@ -26,7 +26,7 @@ class ManualStrategy():
     def __init__(self,verbose=False, impact=0.0, commission=0.0):
         self.verbose = verbose
         self.impact = impact
-        self.comission = commission
+        self.commission = commission
 
     def add_evidence(self, symbol='IBM', sd=datetime.datetime(2008, 1, 1, 0, 0), ed=datetime.datetime(2009, 1, 1, 0, 0), sv=100000):
         """
@@ -50,27 +50,9 @@ class ManualStrategy():
             -1000 a sell, 0 no action. ±2000 occurs when flipping between long and
             short; net holdings are always -1000, 0, or 1000.
         """
-        stock_data = get_data(["JPM"], pd.date_range(sd, ed))
-        stock_data.drop('SPY', axis=1, inplace=True)
-
-        first_trading_day = stock_data.index[0]
-        last_trading_day  = stock_data.index[-1]
-
-        stock_data_copy = stock_data.copy()
-        bbp = calc_bollinger(stock_data_copy, symbol)
-        rsi = calc_rsi(stock_data, symbol)
-        macd_hist = calc_macd(stock_data, symbol)
-        momentum = calc_momentum(stock_data, symbol)
-        ema_crossover = calc_ema(stock_data.copy(), symbol)
-
-        trading_signals = pd.DataFrame(index=stock_data.index)
-        trading_signals['BBP'] = bbp
-        trading_signals['RSI'] = rsi
-        trading_signals['MACD'] = macd_hist
-        trading_signals['Momentum'] = momentum
-        trading_signals['EMA_Crossover'] = ema_crossover
-
-        trading_signals = trading_signals.dropna()
+        trading_signals = build_features(symbol, sd, ed)
+        first_trading_day = trading_signals.index[0]
+        last_trading_day = trading_signals.index[-1]
 
         manual_trades = pd.DataFrame(index=trading_signals.index)
         manual_trades['Position'] = 0.0
@@ -117,16 +99,15 @@ class ManualStrategy():
                 manual_trades.loc[index, 'Position'] = trade
                 current_position = target_position
 
-        manual_strategy_orders = self.convert_order_format(manual_trades, symbol)
-        self.add_empty_order(manual_strategy_orders, symbol, first_trading_day)
-        self.add_empty_order(manual_strategy_orders, symbol, last_trading_day)
-
         if self.verbose:
-            print(manual_strategy_orders.head(5))
+            print(manual_trades[manual_trades['Position'] != 0].head(5))
 
-        manual_strategy_daily_values = compute_portvals(manual_strategy_orders, start_val=sv, commission=9.95, impact=0.005)
-        benchmark_orders = pd.DataFrame([[symbol,"BUY",1000]], columns=["Symbol","Order","Shares"], index=[first_trading_day, last_trading_day])
-        daily_benchmark_performance = compute_portvals(benchmark_orders, start_val=sv, commission=9.95, impact=0.005)
+        manual_strategy_daily_values = compute_portvals_from_trades(
+            manual_trades, symbol, start_val=sv, commission=self.commission, impact=self.impact)
+        benchmark_trades = pd.DataFrame(0.0, index=manual_trades.index, columns=['Position'])
+        benchmark_trades.iloc[0, 0] = 1000
+        daily_benchmark_performance = compute_portvals_from_trades(
+            benchmark_trades, symbol, start_val=sv, commission=self.commission, impact=self.impact)
 
         if ManualStrategy.generate_charts:
             self.handle_chart_creation(manual_strategy_daily_values, daily_benchmark_performance, sd, ed, manual_trades)
@@ -182,7 +163,9 @@ class ManualStrategy():
         plt.title(chart_title)
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"images/{chart_title}.png")
+        os.makedirs("images", exist_ok=True)
+        plt.savefig(os.path.join("images", f"{chart_title}.png"))
+        plt.close()
 
 
     def calc_port_stats(self, portfolio, portfolio_name):
@@ -193,26 +176,3 @@ class ManualStrategy():
 
         if self.verbose:
             print(f"Name: {portfolio_name}  Cumulative Return: {cum_returns:.6f}, Daily Std: {daily_std:.6f}, Daily Mean: {daily_mean:.6f}")
-
-    def convert_order_format(self, df_trades, symbol):
-        trades = df_trades.copy()
-        trades.iloc[0] = df_trades.iloc[0]
-        for i in range(1, len(df_trades)):
-            trades.iloc[i] = df_trades.iloc[i] - df_trades.iloc[i - 1]
-
-        orders_list = []
-
-        for i in range(len(trades)):
-            shares_change = trades.iloc[i, 0]
-            if shares_change > 0:
-                orders_list.append([trades.index[i], symbol, "BUY", abs(shares_change)])
-            elif shares_change < 0:
-                orders_list.append([trades.index[i], symbol,"SELL", abs(shares_change)])
-
-        df_orders = pd.DataFrame(orders_list, columns=["Date", "Symbol", "Order", "Shares"]).set_index("Date")
-        return df_orders
-
-    def add_empty_order(self, orders_df, symbol, date):
-        if date not in orders_df.index:
-            orders_df.loc[date] = [symbol, "BUY", 0]
-            orders_df.sort_index(inplace=True)
