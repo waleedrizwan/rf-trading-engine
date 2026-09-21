@@ -45,6 +45,31 @@ def compute_portvals(orders_df, start_val=100000, commission=0.0, impact=0.0):
     return total_value.to_frame('total_value')
 
 
+def compute_portvals_from_trades(trades, symbol, start_val=100000, commission=0.0, impact=0.0):
+    """
+    Compute daily portfolio values from a trades DataFrame (signed share changes per day).
+
+    Parameters:
+    trades (pd.DataFrame): Single-column DataFrame of signed share trades indexed by date
+    symbol (str): Symbol being traded
+    start_val (float): Starting portfolio value
+    commission (float): Fixed commission charged per executed trade
+    impact (float): Market impact per trade, as a fraction of the traded value
+
+    Returns:
+    pd.DataFrame: DataFrame with 'total_value' column representing portfolio value over time
+    """
+    shares = trades.iloc[:, 0]
+    prices = get_data([symbol], pd.date_range(shares.index.min(), shares.index.max()))[symbol]
+    prices = prices.ffill().bfill()
+    shares = shares.reindex(prices.index, fill_value=0.0)
+
+    costs = shares.abs() * prices * impact + (shares != 0) * commission
+    cash = start_val - (shares * prices + costs).cumsum()
+    total_value = cash + shares.cumsum() * prices
+    return total_value.to_frame('total_value')
+
+
 def calculate_portfolio_stats(portfolio_values, portfolio_name=None, risk_free_rate=0.0):
     daily_returns = portfolio_values["total_value"].pct_change().dropna()
     cum_returns = portfolio_values["total_value"].iloc[-1] / portfolio_values["total_value"].iloc[0] - 1.0
