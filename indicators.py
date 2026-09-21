@@ -58,6 +58,29 @@ def calc_ema(prices, symbol):
     return ema_12 - ema_26
 
 
+def build_features(symbol, sd, ed, warmup_days=60):
+    """
+    Build the indicator feature matrix for a symbol over [sd, ed].
+
+    Prices are loaded from warmup_days calendar days before sd so every
+    indicator has a full lookback window on the first trading day.
+
+    Returns:
+        pd.DataFrame indexed by trading day with columns
+        BBP, RSI, MACD, Momentum, EMA_Crossover.
+    """
+    dates = pd.date_range(sd - dt.timedelta(days=warmup_days), ed)
+    prices = get_data([symbol], dates)[[symbol]].ffill().bfill()
+
+    features = pd.DataFrame(index=prices.index)
+    features['BBP'] = calc_bollinger(prices, symbol)
+    features['RSI'] = calc_rsi(prices, symbol)
+    features['MACD'] = calc_macd(prices, symbol)
+    features['Momentum'] = calc_momentum(prices, symbol)
+    features['EMA_Crossover'] = calc_ema(prices, symbol)
+    return features.loc[sd:ed]
+
+
 if __name__ == "__main__":
     test_symbol = "JPM"
     stock_data = get_data([test_symbol], pd.date_range(dt.datetime(2008, 1, 1), dt.datetime(2009, 12, 31)))
