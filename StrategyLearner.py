@@ -93,7 +93,7 @@ class StrategyLearner(object):
             print(prices)
 
         bbp = calc_bollinger(prices, symbol)
-        rsi = calc_rsi(prices)
+        rsi = calc_rsi(prices, symbol)
         macd = calc_macd(prices, symbol)
         momentum = calc_momentum(prices, symbol)
         ema_crossover = calc_ema(prices.copy(), symbol)
@@ -189,7 +189,7 @@ class StrategyLearner(object):
         prices = prices_all[[symbol]]
 
         bbp = calc_bollinger(prices, symbol)
-        rsi = calc_rsi(prices)
+        rsi = calc_rsi(prices, symbol)
         macd = calc_macd(prices, symbol)
         momentum = calc_momentum(prices, symbol)
         ema_crossover = calc_ema(prices.copy(), symbol)

@@ -58,7 +58,7 @@ class ManualStrategy():
 
         stock_data_copy = stock_data.copy()
         bbp = calc_bollinger(stock_data_copy, symbol)
-        rsi = calc_rsi(stock_data)
+        rsi = calc_rsi(stock_data, symbol)
         macd_hist = calc_macd(stock_data, symbol)
         momentum = calc_momentum(stock_data, symbol)
         ema_crossover = calc_ema(stock_data.copy(), symbol)
