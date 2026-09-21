@@ -10,10 +10,16 @@ import os
 import pandas as pd
 
 
+def data_dir():
+    """Return the market data directory (MARKET_DATA_DIR, or data/ next to this file)."""
+    default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    return os.environ.get("MARKET_DATA_DIR", default)
+
+
 def symbol_to_path(symbol, base_dir=None):
     """Return CSV file path given ticker symbol."""
     if base_dir is None:
-        base_dir = os.environ.get("MARKET_DATA_DIR", "../data/")
+        base_dir = data_dir()
     return os.path.join(base_dir, "{}.csv".format(str(symbol)))
 
 
