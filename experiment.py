@@ -14,6 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import pandas as pd
 
 from ManualStrategy import ManualStrategy
@@ -34,28 +35,69 @@ def benchmark_trades(index, shares=1000):
     return trades
 
 
+STYLE = {
+    "Benchmark": {"color": "#8a8f98", "linewidth": 1.6, "linestyle": "--"},
+    "Manual Strategy": {"color": "#e8833a", "linewidth": 1.6},
+    "Strategy Learner": {"color": "#2f6fdb", "linewidth": 2.4},
+}
+
+
+def style_axes(ax):
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.tick_params(labelsize=9)
+
+
 def plot_performance(portvals, trades, title, path):
-    """Plot normalized portfolio values and mark the learner's long/short entries."""
-    colors = {"Benchmark": "tab:purple", "Manual Strategy": "tab:red", "Strategy Learner": "tab:green"}
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for name, values in portvals.items():
-        normalized = values["total_value"] / values["total_value"].iloc[0]
-        ax.plot(normalized.index, normalized, label=name, color=colors.get(name))
+    """Plot normalized portfolio values, marking the learner's long/short entries."""
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    normalized = {name: v["total_value"] / v["total_value"].iloc[0] for name, v in portvals.items()}
 
-    holdings = trades["Manual Strategy"]["Position"].cumsum()
+    for name, series in normalized.items():
+        ret = series.iloc[-1] - 1
+        ax.plot(series.index, series, label=f"{name} ({ret:+.1%})", **STYLE[name])
+
+    learner, benchmark = normalized["Strategy Learner"], normalized["Benchmark"]
+    ax.fill_between(learner.index, learner, benchmark, where=learner >= benchmark,
+                    color=STYLE["Strategy Learner"]["color"], alpha=0.08, interpolate=True)
+
+    holdings = trades["Strategy Learner"]["Position"].cumsum()
     previous = holdings.shift(1).fillna(0)
-    for date in holdings.index[(holdings == 1000) & (previous != 1000)]:
-        ax.axvline(date, color="tab:blue", linestyle="--", linewidth=0.8, alpha=0.6)
-    for date in holdings.index[(holdings == -1000) & (previous != -1000)]:
-        ax.axvline(date, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+    longs = holdings.index[(holdings == 1000) & (previous != 1000)]
+    shorts = holdings.index[(holdings == -1000) & (previous != -1000)]
+    ax.scatter(longs, learner[longs], marker="^", s=70, color="#1f9d55", zorder=5, label="Learner long entry")
+    ax.scatter(shorts, learner[shorts], marker="v", s=70, color="#d64545", zorder=5, label="Learner short entry")
 
-    ax.set_title(title)
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Normalized Portfolio Value")
-    ax.grid(True, alpha=0.3)
-    ax.legend(title="Manual entries: blue = long, black = short", title_fontsize=8)
+    ax.axhline(1.0, color="black", linewidth=0.6, alpha=0.4)
+    ax.set_title(title, fontsize=13, fontweight="bold", loc="left")
+    ax.set_ylabel("Portfolio value (normalized)")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    style_axes(ax)
     fig.tight_layout()
-    fig.savefig(path, dpi=120)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def plot_summary(results, symbol, path):
+    """Grouped bar chart of cumulative return per strategy for each period."""
+    periods = list(results)
+    names = list(STYLE)
+    width = 0.26
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    for i, name in enumerate(names):
+        values = [results[p].loc[name, "Cumulative Return"] for p in periods]
+        xs = [j + (i - 1) * width for j in range(len(periods))]
+        bars = ax.bar(xs, values, width, label=name, color=STYLE[name]["color"])
+        ax.bar_label(bars, labels=[f"{v:+.1%}" for v in values], fontsize=8, padding=2)
+    ax.set_xticks(range(len(periods)), periods)
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
+    ax.set_title(f"{symbol}: cumulative return vs. buy-and-hold", fontsize=13, fontweight="bold", loc="left")
+    ax.legend(frameon=False, fontsize=9)
+    style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
     plt.close(fig)
 
 
@@ -77,7 +119,8 @@ def evaluate(symbol, period, learner, outdir, label):
     print(stats.to_string(float_format=lambda x: f"{x:.4f}"))
 
     filename = label.lower().replace(" ", "_").replace("-", "_") + ".png"
-    plot_performance(portvals, trades, f"{symbol}: {label}", os.path.join(outdir, filename))
+    title = f"{symbol}: {label} ({sd.year}–{ed.year})"
+    plot_performance(portvals, trades, title, os.path.join(outdir, filename))
     return stats
 
 
@@ -97,14 +140,19 @@ def impact_study(symbol, outdir):
     print("\nMarket impact study (in-sample, no commission)")
     print(results.to_string(float_format=lambda x: f"{x:.4f}"))
 
-    fig, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.bar(results.index.astype(str), results["Trades"], color="tab:blue", alpha=0.6)
-    ax1.set_xlabel("Market impact")
-    ax1.set_ylabel("Number of trades", color="tab:blue")
+    labels = [f"{x:.1%}" for x in results.index]
+    fig, ax1 = plt.subplots(figsize=(8, 4.5))
+    ax1.bar(labels, results["Trades"], color="#2f6fdb", alpha=0.35, label="Trades")
+    ax1.set_xlabel("Market impact per trade")
+    ax1.set_ylabel("Number of trades")
     ax2 = ax1.twinx()
-    ax2.plot(results.index.astype(str), results["Cumulative Return"], color="tab:red", marker="o")
-    ax2.set_ylabel("Cumulative return", color="tab:red")
-    ax1.set_title(f"{symbol}: Strategy Learner sensitivity to market impact")
+    ax2.plot(labels, results["Cumulative Return"], color="#2f6fdb", marker="o", linewidth=2.2, label="Cumulative return")
+    ax2.set_ylabel("Cumulative return")
+    ax2.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
+    ax2.spines["top"].set_visible(False)
+    ax1.set_title(f"{symbol}: Strategy Learner sensitivity to market impact", fontsize=13, fontweight="bold", loc="left")
+    style_axes(ax1)
+    fig.legend(frameon=False, fontsize=9, loc="upper right", bbox_to_anchor=(0.88, 0.88))
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "impact_study.png"), dpi=120)
     plt.close(fig)
@@ -120,8 +168,11 @@ def main():
     learner = StrategyLearner(impact=IMPACT, commission=COMMISSION)
     learner.add_evidence(args.symbol, *IN_SAMPLE, START_VALUE)
 
-    evaluate(args.symbol, IN_SAMPLE, learner, args.outdir, "In-sample")
-    evaluate(args.symbol, OUT_OF_SAMPLE, learner, args.outdir, "Out-of-sample")
+    results = {
+        "In-sample": evaluate(args.symbol, IN_SAMPLE, learner, args.outdir, "In-sample"),
+        "Out-of-sample": evaluate(args.symbol, OUT_OF_SAMPLE, learner, args.outdir, "Out-of-sample"),
+    }
+    plot_summary(results, args.symbol, os.path.join(args.outdir, "summary.png"))
     impact_study(args.symbol, args.outdir)
     print(f"\nCharts saved to {args.outdir}/")
 
