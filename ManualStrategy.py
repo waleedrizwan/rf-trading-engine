@@ -1,7 +1,7 @@
 from datetime import datetime
 from indicators import calc_bollinger, calc_macd, calc_rsi, calc_momentum, calc_ema
 from util import get_data
-from marketsimcode import compute_portvals, get_stock_price
+from marketsimcode import compute_portvals
 import pandas as pd
 import datetime
 import matplotlib.pyplot as plt

@@ -1,76 +1,49 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 from util import get_data
+
 
 def compute_portvals(orders_df, start_val=100000, commission=0.0, impact=0.0):
     """
-    Compute portfolio values based on orders DataFrame.
+    Compute daily portfolio values from an order book.
 
     Parameters:
     orders_df (pd.DataFrame): DataFrame with index=dates and columns=['Symbol', 'Order', 'Shares']
     start_val (float): Starting portfolio value
-    commission (float): Commission cost per trade
-    impact (float): Market impact per trade
+    commission (float): Fixed commission charged per executed order
+    impact (float): Market impact per trade, as a fraction of the traded value
 
     Returns:
     pd.DataFrame: DataFrame with 'total_value' column representing portfolio value over time
     """
+    orders_df = orders_df.sort_index()
     date_range = pd.date_range(orders_df.index.min(), orders_df.index.max())
     symbols = orders_df['Symbol'].unique().tolist()
-    prices = get_data(symbols, date_range)
+    prices = get_data(symbols, date_range)[symbols].ffill().bfill()
 
-    portfolio = pd.DataFrame(index=prices.index)
-    portfolio['cash'] = start_val
-    for symbol in symbols:
-        portfolio[symbol] = 0
+    # Signed share and cash changes per trading day
+    share_changes = pd.DataFrame(0.0, index=prices.index, columns=symbols)
+    cash_changes = pd.Series(0.0, index=prices.index)
 
-    for date, row in orders_df.iterrows():
-        if isinstance(row, pd.Series):
-            symbol = row['Symbol']
-            shares = row['Shares']
-            action = row['Order']
+    for date, order in orders_df.iterrows():
+        shares = order['Shares']
+        if shares == 0:
+            continue
+        symbol = order['Symbol']
+        # Orders on non-trading days execute on the next trading day
+        trade_date = prices.index[prices.index.searchsorted(date)]
+        price = prices.loc[trade_date, symbol]
+        sign = 1 if order['Order'].upper() == 'BUY' else -1
 
-            price = prices.loc[date, symbol]
-            impact_cost = price * impact * shares
+        share_changes.loc[trade_date, symbol] += sign * shares
+        cash_changes[trade_date] -= sign * price * shares + price * shares * impact + commission
 
-            if action.upper() == 'BUY':
-                cost = price * shares + impact_cost + commission
-                portfolio.loc[date:, symbol] += shares
-                portfolio.loc[date:, 'cash'] -= cost
-            else:  # 'SELL'
-                proceeds = price * shares - impact_cost - commission
-                portfolio.loc[date:, symbol] -= shares
-                portfolio.loc[date:, 'cash'] += proceeds
-        else:
-            for idx, order in row.iterrows():
-                symbol = order['Symbol']
-                shares = order['Shares']
-                action = order['Order']
+    holdings = share_changes.cumsum()
+    cash = start_val + cash_changes.cumsum()
+    total_value = cash + (holdings * prices).sum(axis=1)
+    return total_value.to_frame('total_value')
 
-                if shares == 0:
-                    continue
-
-                price = prices.loc[date, symbol]
-                impact_cost = price * impact * shares
-
-                if action.upper() == 'BUY':
-                    cost = price * shares + impact_cost + commission
-                    portfolio.loc[date:, symbol] += shares
-                    portfolio.loc[date:, 'cash'] -= cost
-                else:  # 'SELL'
-                    proceeds = price * shares - impact_cost - commission
-                    portfolio.loc[date:, symbol] -= shares
-                    portfolio.loc[date:, 'cash'] += proceeds
-
-    portfolio['total_value'] = portfolio['cash']
-    for symbol in symbols:
-        portfolio['total_value'] += portfolio[symbol] * prices[symbol]
-
-    return portfolio[['total_value']]
-
-def get_stock_price(pricing_df, order_date, symbol):
-    order_date = pd.to_datetime(order_date)
-    return float(pricing_df.loc[order_date, symbol])
 
 def calculate_portfolio_stats(portfolio_values, portfolio_name=None, risk_free_rate=0.0):
     daily_returns = portfolio_values["total_value"].pct_change().dropna()

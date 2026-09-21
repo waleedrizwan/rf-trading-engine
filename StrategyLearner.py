@@ -31,7 +31,7 @@ import util as ut
 from indicators import calc_bollinger, calc_rsi, calc_macd, calc_momentum, calc_ema
 from RTLearner import RTLearner
 from BagLearner import BagLearner
-from marketsimcode import compute_portvals, get_stock_price
+from marketsimcode import compute_portvals
 import numpy as np
 
 class StrategyLearner(object):
