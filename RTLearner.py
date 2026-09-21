@@ -1,7 +1,5 @@
 import numpy as np
 
-RANDOM_SEED = 42
-
 
 class RTLearner:
     def __init__(self, leaf_size, verbose=False):
@@ -9,7 +7,8 @@ class RTLearner:
         Random Tree regression learner.
 
         Builds a decision tree where each split uses a randomly chosen feature
-        and splits on that feature's median value.
+        and splits on that feature's median value. Randomness comes from NumPy's
+        global RNG, so seed it (as BagLearner does) for reproducible trees.
 
         Parameters
             leaf_size (int)  - Maximum number of samples aggregated at a leaf.
@@ -21,7 +20,6 @@ class RTLearner:
 
     def build_tree(self, data):
         data = data.astype(float)
-        np.random.seed(RANDOM_SEED)
         if data.shape[0] <= self.leaf_size or np.all(data[:, -1] == data[0, -1]):
             return np.array([["leaf", np.mean(data[:, -1]), None, None]], dtype=object)
 
@@ -29,7 +27,7 @@ class RTLearner:
         split_val = np.median(data[:, best_feature])
 
         if np.all(data[:, best_feature] <= split_val) or np.all(data[:, best_feature] > split_val):
-            return np.array([["leaf", np.mean(data[:, -1]), None, None]])
+            return np.array([["leaf", np.mean(data[:, -1]), None, None]], dtype=object)
 
         left_data = data[data[:, best_feature] <= split_val]
         right_data = data[data[:, best_feature] > split_val]
