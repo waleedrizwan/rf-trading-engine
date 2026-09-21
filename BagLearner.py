@@ -17,10 +17,9 @@ class BagLearner:
         boost (bool)    - Reserved for boosting; currently unused.
         verbose (bool)  - If True, print debugging information.
     """
-    def __init__(self, learner, kwargs={}, bags=50, boost=False, verbose=False):
-        self.learners = []
-        for x in range(0, bags):
-            self.learners.append(learner(**kwargs))
+    def __init__(self, learner, kwargs=None, bags=50, boost=False, verbose=False):
+        kwargs = kwargs or {}
+        self.learners = [learner(**kwargs) for _ in range(bags)]
 
         if verbose:
             print(self.learners)
